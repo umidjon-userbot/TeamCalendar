@@ -9,6 +9,20 @@ import { renderAdmin } from "./admin.js";
 
 const app = el("#app");
 
+function brandHTML() {
+  return `
+    <a class="brand" href="#/">
+      <svg class="brand__mark" viewBox="0 0 28 28" width="26" height="26" aria-hidden="true">
+        <rect x="2.5" y="5.5" width="23" height="20" rx="3.5" fill="none"
+              stroke="currentColor" stroke-width="1.6"/>
+        <path d="M2.5 11.5h23" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M9 2.5v5M19 2.5v5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        <rect x="7" y="15" width="5" height="5" rx="1.2" fill="var(--red)"/>
+      </svg>
+      <span class="brand__name">${esc(CONFIG.SITE_TITLE)}</span>
+    </a>`;
+}
+
 /* ============================================================
    Header
    ============================================================ */
@@ -18,10 +32,7 @@ function headerHTML() {
   return `
     <header class="topbar">
       <div class="topbar__row">
-        <a class="brand" href="#/">
-          <span class="brand__mark" aria-hidden="true"></span>
-          <span class="brand__name">${esc(CONFIG.SITE_TITLE)}</span>
-        </a>
+        ${brandHTML()}
 
         <div class="topbar__right">
           <div class="langpick">
@@ -158,10 +169,7 @@ function renderAdminPage() {
   app.innerHTML = `
     <header class="topbar topbar--admin">
       <div class="topbar__row">
-        <a class="brand" href="#/">
-          <span class="brand__mark" aria-hidden="true"></span>
-          <span class="brand__name">${esc(CONFIG.SITE_TITLE)}</span>
-        </a>
+        ${brandHTML()}
         <div class="topbar__right">
           <div class="langpick">
             <button class="btn btn--ghost btn--small" data-lang-toggle>
