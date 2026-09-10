@@ -303,11 +303,13 @@ export function renderCalendar(host) {
     cells.push(`
       <div class="cell${inMonth ? "" : " cell--out"}${weekend ? " cell--weekend" : ""}${isToday ? " cell--today" : ""}"
            data-date="${dateKey(d)}">
-        <button class="cell__num" data-add="${dateKey(d)}"
-                aria-label="${esc(formatDayMonth(d))}">${d.getDate()}</button>
+        <button class="cell__hit" data-add="${dateKey(d)}"
+                aria-label="${esc(formatDayMonth(d))}"></button>
+        <span class="cell__num">${d.getDate()}</span>
         <div class="cell__events">
           ${shown.map(e => `
-            <button class="chip" data-event="${esc(e.id)}" style="--c:${esc(e.color)}">
+            <button class="chip" data-event="${esc(e.id)}" style="--c:${esc(e.color)}"
+                    title="${esc(e.title)}">
               <span class="chip__time">${esc(fmtTime(e.start_at))}</span>
               <span class="chip__title">${esc(e.title)}</span>
             </button>`).join("")}
@@ -339,8 +341,6 @@ export function renderCalendar(host) {
   host.querySelectorAll("[data-add]").forEach(btn => {
     btn.onclick = () => {
       const d = new Date(btn.dataset.add + "T00:00:00");
-      const list = byDay.get(btn.dataset.add) ?? [];
-      if (list.length) return openDay(d);
       if (canEdit()) openEventForm(null, d);
       else openAuthModal(() => openEventForm(null, d));
     };

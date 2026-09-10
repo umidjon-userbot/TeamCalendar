@@ -6,13 +6,15 @@
   --ink:       #16302B;
   --ink-2:     #4A5F58;
   --ink-3:     #7C8D86;
-  --paper:     #ECEFE9;
+  --paper:     #E4E9DF;
   --surface:   #FFFFFF;
-  --line:      #D2D9CE;
-  --line-soft: #E3E8DF;
+  --line:      #CFD7CA;
+  --line-soft: #E7EBE3;
   --red:       #B33A2B;
   --gold:      #9C7318;
-  --shade:     #F5F7F2;
+  --shade:     #F4F6F1;
+  --weekend:   #FAF8F2;
+  --outside:   #F7F8F5;
 
   --r-sm: 3px;
   --r-md: 6px;
@@ -109,17 +111,10 @@ a { color: inherit; }
   gap: 10px;
   text-decoration: none;
   font-weight: 600;
+  color: var(--ink);
 }
 
-.brand__mark {
-  width: 11px;
-  height: 22px;
-  background: var(--red);
-  border-radius: 1px 1px 5px 5px;
-  box-shadow: 16px 0 0 -3px var(--ink);
-  margin-right: 13px;
-  flex: none;
-}
+.brand__mark { flex: none; color: var(--ink); }
 
 .brand__name { font-size: var(--step-1); letter-spacing: -0.02em; }
 
@@ -256,7 +251,7 @@ a { color: inherit; }
    Sahifa
    ============================================================ */
 
-.page { padding: var(--pad); max-width: 1240px; margin: 0 auto; }
+.page { padding: var(--pad); max-width: 1380px; margin: 0 auto; }
 
 /* ============================================================
    Taqvim to'ri
@@ -267,14 +262,17 @@ a { color: inherit; }
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   overflow: hidden;
+  box-shadow: 0 1px 2px rgb(22 48 43 / .05), 0 12px 28px -18px rgb(22 48 43 / .35);
 }
 
-.grid__head, .grid__body { display: grid; grid-template-columns: repeat(7, 1fr); }
+/* minmax(0,…) bo'lmasa, probelsiz uzun matn ustunni cho'zib yuboradi */
+.grid__head, .grid__body { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 
 .grid__dow {
-  padding: 9px 10px;
-  font-size: 0.78rem;
+  padding: 10px 12px;
+  font-size: 0.75rem;
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--ink-3);
   border-bottom: 1px solid var(--line);
   background: var(--shade);
@@ -282,73 +280,123 @@ a { color: inherit; }
 .grid__dow--weekend { color: var(--red); }
 
 .cell {
-  min-height: 116px;
-  padding: 5px;
+  position: relative;
+  min-width: 0;
+  min-height: 122px;
+  padding: 6px;
   border-right: 1px solid var(--line-soft);
   border-bottom: 1px solid var(--line-soft);
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 .cell:nth-child(7n) { border-right: 0; }
 .cell:nth-last-child(-n+7) { border-bottom: 0; }
 
-.cell--out { background: #FAFBF8; }
-.cell--out .cell__num { color: var(--ink-3); opacity: .55; }
-.cell--weekend:not(.cell--out) { background: #FBFAF6; }
+.cell--weekend { background: var(--weekend); }
+.cell--out { background: var(--outside); }
+.cell--out.cell--weekend { background: var(--outside); }
+.cell--out .cell__num { opacity: .38; }
 
-.cell__num {
-  align-self: flex-start;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 6px;
+/* Bo'sh joyni bosish = tadbir qo'shish */
+.cell__hit {
+  position: absolute;
+  inset: 0;
   background: none;
   border: 0;
-  border-radius: 100px;
-  font-size: 0.84rem;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.cell__hit::after {
+  content: "+";
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity .12s;
+}
+.cell__hit:hover { background: rgb(22 48 43 / .035); }
+.cell__hit:hover::after { opacity: 1; }
+.cell__hit:focus-visible { outline-offset: -3px; }
+
+.cell__num {
+  position: relative;
+  z-index: 1;
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  min-width: 25px;
+  height: 25px;
+  padding: 0 5px;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: var(--ink-2);
-  cursor: pointer;
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
-.cell__num:hover { background: var(--shade); color: var(--ink); }
 
 .cell--today .cell__num {
   background: var(--red);
   color: #fff;
   font-weight: 600;
+  border-radius: 100px;
 }
-.cell--today .cell__num:hover { background: #96301F; color: #fff; }
 
-.cell__events { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cell__events {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
 
 .chip {
   display: flex;
   align-items: baseline;
   gap: 5px;
   width: 100%;
-  padding: 3px 6px;
-  background: color-mix(in srgb, var(--c) 11%, transparent);
+  min-width: 0;
+  padding: 3px 7px;
+  background: color-mix(in srgb, var(--c) 10%, var(--surface));
   border: 0;
   border-left: 2px solid var(--c);
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
   cursor: pointer;
   text-align: left;
-  font-size: 0.78rem;
-  line-height: 1.35;
-  min-width: 0;
+  font-size: 0.775rem;
+  line-height: 1.4;
+  transition: background .12s;
 }
-.chip:hover { background: color-mix(in srgb, var(--c) 20%, transparent); }
+.chip:hover { background: color-mix(in srgb, var(--c) 22%, var(--surface)); }
 
-.chip__time { color: var(--c); font-weight: 600; font-variant-numeric: tabular-nums; flex: none; }
-.chip__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip__time {
+  color: var(--c);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* CJK matnda probel bo'lmaydi — kesib, uch nuqta qo'yamiz */
+.chip__title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: keep-all;
+}
 
 .chip--more {
   background: none;
   border-left-color: transparent;
   color: var(--ink-3);
   font-weight: 500;
-  padding-left: 8px;
+  padding-left: 9px;
 }
 .chip--more:hover { background: var(--shade); }
 
@@ -356,35 +404,47 @@ a { color: inherit; }
    Ro'yxat
    ============================================================ */
 
-.agenda + .agenda { margin-top: 34px; }
-
-.agenda__label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--ink-3);
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 4px;
+.agenda {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 4px 18px 8px;
+  box-shadow: 0 1px 2px rgb(22 48 43 / .05), 0 12px 28px -18px rgb(22 48 43 / .35);
 }
 
-.agenda--past { opacity: .62; }
+.agenda + .agenda { margin-top: 22px; }
+
+.agenda__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+  padding: 14px 0 9px;
+  border-bottom: 1px solid var(--line);
+}
+
+.agenda--past { opacity: .68; }
 
 .row {
   display: flex;
-  gap: 16px;
+  gap: 18px;
   width: 100%;
-  padding: 13px 12px 13px 0;
+  padding: 14px 10px 14px 0;
   background: none;
   border: 0;
   border-bottom: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
   cursor: pointer;
   text-align: left;
+  min-width: 0;
+  transition: background .12s;
 }
-.row:hover { background: var(--surface); }
+.row:last-child { border-bottom: 0; }
+.row:hover { background: var(--shade); }
 
 .row__date {
   flex: none;
-  width: 96px;
+  width: 104px;
   display: flex;
   flex-direction: column;
   padding-left: 12px;
@@ -394,8 +454,12 @@ a { color: inherit; }
 .row__time { color: var(--ink-3); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 
 .row__main { display: flex; flex-direction: column; min-width: 0; }
-.row__title { font-size: var(--step-1); font-weight: 500; }
-.row__place { color: var(--ink-3); font-size: 0.85rem; }
+.row__title {
+  font-size: var(--step-1);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.row__place { color: var(--ink-3); font-size: 0.85rem; overflow-wrap: anywhere; }
 
 /* Kun modali */
 
@@ -414,7 +478,8 @@ a { color: inherit; }
 .dayrow:hover { background: var(--shade); }
 .dayrow__time { color: var(--c); font-weight: 600; font-variant-numeric: tabular-nums; }
 .dayrow__body { display: flex; flex-direction: column; }
-.dayrow__title { font-weight: 500; }
+.dayrow__body { min-width: 0; }
+.dayrow__title { font-weight: 500; overflow-wrap: anywhere; }
 .dayrow__place { color: var(--ink-3); font-size: 0.85rem; }
 
 /* Bo'sh holat */
@@ -485,6 +550,7 @@ a { color: inherit; }
   letter-spacing: -0.02em;
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .modal__body { padding: 20px; overflow-y: auto; }
@@ -578,7 +644,7 @@ textarea.input { resize: vertical; min-height: 68px; }
 
 .detail__row { display: flex; gap: 10px; }
 .detail__key { color: var(--ink-3); min-width: 84px; }
-.detail__desc { white-space: pre-wrap; color: var(--ink-2); }
+.detail__desc { white-space: pre-wrap; color: var(--ink-2); overflow-wrap: anywhere; }
 .detail__meta { font-size: 0.82rem; color: var(--ink-3); padding-top: 4px; border-top: 1px solid var(--line-soft); }
 
 /* ============================================================
@@ -596,7 +662,7 @@ textarea.input { resize: vertical; min-height: 68px; }
 .log__verb--create { color: #4E7A4A; }
 .log__verb--delete { color: var(--red); }
 .log__verb--update { color: var(--gold); }
-.log__what { font-style: italic; }
+.log__what { font-style: italic; overflow-wrap: anywhere; }
 
 .log__changes { margin: 7px 0 0; padding-left: 13px; border-left: 2px solid var(--line); }
 .log__changes li { font-size: 0.85rem; display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; padding: 1px 0; }
@@ -651,7 +717,7 @@ textarea.input { resize: vertical; min-height: 68px; }
 
 .tcard__dot { width: 9px; height: 9px; border-radius: 100px; background: var(--c); flex: none; }
 .tcard__main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.tcard__label { font-weight: 600; }
+.tcard__label { font-weight: 600; overflow-wrap: anywhere; }
 .tcard__meta { font-size: 0.84rem; color: var(--ink-2); }
 .tcard__usage { font-size: 0.8rem; color: var(--ink-3); }
 
@@ -735,8 +801,9 @@ textarea.input { resize: vertical; min-height: 68px; }
 }
 
 @media (max-width: 640px) {
-  .cell { min-height: 84px; padding: 3px; }
-  .cell__num { min-width: 22px; height: 22px; font-size: 0.78rem; }
+  .cell { min-height: 78px; padding: 3px; }
+  .cell__num { min-width: 21px; height: 21px; font-size: 0.75rem; }
+  .cell__hit::after { display: none; }
   .chip { padding: 2px 4px; font-size: 0.7rem; gap: 3px; }
   .chip__time { display: none; }
   .grid__dow { padding: 7px 6px; font-size: 0.72rem; }
