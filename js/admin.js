@@ -1,11 +1,12 @@
-import { CONFIG } from "../config.js";
+import { CONFIG } from "./config.js";
 import { t } from "./i18n.js";
 import {
   store, el, esc, uid, sha256, randomCode, readAll, writeAll,
   fmtDateTime, fmtDate, fmtTime, relTime, tokenStatus,
   toLocalInput, fromLocalInput, toast, refresh, emit,
+  eventColor, categoryOf, categoryLabel, describeRule,
 } from "./core.js";
-import { modal, auditItemHTML, openEventForm } from "./views.js";
+import { modal, auditItemHTML, wireRestore, openEventForm } from "./views.js";
 
 const KEY = "admin-ok";
 export const isAdmin = () => sessionStorage.getItem(KEY) === "1";
@@ -274,16 +275,21 @@ function drawEvents(host) {
     return;
   }
 
-  wrap.innerHTML = `<ul class="tlist">${events.map(e => `
-    <li class="tcard" style="--c:${esc(e.color)}">
+  wrap.innerHTML = `<ul class="tlist">${events.map(e => {
+    const cat = categoryOf(e);
+    return `
+    <li class="tcard" style="--c:${esc(eventColor(e))}">
       <span class="tcard__dot"></span>
       <div class="tcard__main">
         <span class="tcard__label">${esc(e.title)}</span>
         <span class="tcard__meta">${esc(fmtDate(e.start_at))} · ${esc(fmtTime(e.start_at))}${e.location ? " · " + esc(e.location) : ""}</span>
-        <span class="tcard__usage">${esc(t("event.by", { name: e.created_by ?? "—" }))}</span>
+        <span class="tcard__usage">
+          ${cat ? esc(categoryLabel(cat)) + " · " : ""}${e.rrule ? "↻ " + esc(describeRule(e.rrule)) + " · " : ""}${esc(t("event.by", { name: e.created_by ?? "—" }))}
+        </span>
       </div>
       <button class="btn btn--small" data-edit="${esc(e.id)}">${esc(t("event.edit"))}</button>
-    </li>`).join("")}</ul>`;
+    </li>`;
+  }).join("")}</ul>`;
 
   wrap.querySelectorAll("[data-edit]").forEach(btn => {
     btn.onclick = () => {
@@ -303,4 +309,5 @@ function drawLog(host) {
   wrap.innerHTML = entries.length
     ? `<ul class="logs">${entries.map(auditItemHTML).join("")}</ul>`
     : `<p class="muted">${esc(t("audit.empty"))}</p>`;
+  wireRestore(wrap, () => { drawLog(host); drawEvents(host); });
 }

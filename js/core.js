@@ -1,5 +1,5 @@
-import { CONFIG, githubToken } from "../config.js";
-import { t, formatDate, formatDayMonth } from "./i18n.js";
+import { CONFIG, githubToken } from "./config.js";
+import { t, formatDate, formatDayMonth, getLang } from "./i18n.js";
 
 /* ============================================================
    Umumiy yordamchilar
@@ -166,6 +166,8 @@ export const store = {
   loaded: false,
   view: localStorage.getItem("view") || "calendar",
   cursor: new Date(),
+  query: "",
+  hidden: new Set(JSON.parse(localStorage.getItem("hiddenCats") || "[]")),
   session: JSON.parse(sessionStorage.getItem("session") || "null"), // { code, username, tokenId }
   listeners: new Set(),
 };
@@ -254,14 +256,16 @@ export async function verifyToken(code, username) {
    Audit
    ============================================================ */
 
-const TRACKED = ["title", "description", "start_at", "end_at", "location", "color"];
+const TRACKED = ["title", "description", "start_at", "end_at", "location", "category", "rrule"];
 
 export function computeDiff(before, after) {
   const diff = { before: {}, after: {} };
   for (const k of TRACKED) {
     const b = before?.[k] ?? null;
     const a = after?.[k] ?? null;
-    if (b !== a) { diff.before[k] = b; diff.after[k] = a; }
+    // rrule obyekt — mazmuni bo'yicha solishtiramiz
+    const same = k === "rrule" ? JSON.stringify(b) === JSON.stringify(a) : b === a;
+    if (!same) { diff.before[k] = b; diff.after[k] = a; }
   }
   return diff;
 }
@@ -269,6 +273,7 @@ export function computeDiff(before, after) {
 export function buildAuditEntry({ event, action, before, after }) {
   return {
     id: uid(),
+    snapshot: action === "DELETE" ? { ...event } : null,
     event_id: event.id,
     event_title: event.title,
     action,
@@ -279,7 +284,8 @@ export function buildAuditEntry({ event, action, before, after }) {
   };
 }
 
-export const fieldLabel = key => t(`field.${key}`);
+const FIELD_KEYS = { category: "event.fCategory", rrule: "event.fRepeat" };
+export const fieldLabel = key => t(FIELD_KEYS[key] ?? `field.${key}`);
 export const TRACKED_FIELDS = TRACKED;
 
 /* ============================================================
@@ -298,7 +304,9 @@ export async function saveEvent(draft) {
     location: draft.location?.trim() ?? "",
     start_at: draft.start_at,
     end_at: draft.end_at || null,
-    color: draft.color || CONFIG.COLORS[0].value,
+    category: draft.category || CONFIG.CATEGORIES[0].id,
+    rrule: draft.rrule?.freq ? { ...draft.rrule } : null,
+    exdates: existing?.exdates ?? [],
     created_at: existing?.created_at ?? new Date().toISOString(),
     created_by: existing?.created_by ?? store.session?.username ?? "noma'lum",
     updated_at: new Date().toISOString(),
@@ -381,7 +389,7 @@ export function buildICS(events) {
     const end = e.end_at ? new Date(e.end_at) : new Date(start.getTime() + 3600000);
     lines.push(
       "BEGIN:VEVENT",
-      `UID:${e.id}@tadbirlar`,
+      `UID:${e.series_id ?? e.id}-${e.occ_key ?? dateKey(start)}@tadbirlar`,
       `DTSTAMP:${now}`,
       `DTSTART:${icsStamp(start)}`,
       `DTEND:${icsStamp(end)}`,
@@ -425,4 +433,210 @@ export function toast(message, kind = "info") {
     node.classList.add("is-out");
     setTimeout(() => node.remove(), 250);
   }, 3600);
+}
+
+
+/* ============================================================
+   Turlar (kategoriyalar)
+   ============================================================ */
+
+export const categoryOf = e =>
+  CONFIG.CATEGORIES.find(c => c.id === (e.category ?? "")) ?? null;
+
+export const eventColor = e =>
+  categoryOf(e)?.color ?? e.color ?? "#79876E";
+
+export const categoryLabel = c =>
+  c?.label?.[getLang()] ?? c?.label?.en ?? c?.id ?? "";
+
+/* ============================================================
+   Takrorlanish
+   ============================================================ */
+
+export const FREQS = ["daily", "weekly", "monthly", "yearly"];
+
+/** k-chi takror. Har doim asl sanadan hisoblanadi, shuning uchun
+ *  oy oxiri (31-son) kabi hollarda sana siljib ketmaydi. */
+function occurrenceAt(start, freq, step, k) {
+  const x = new Date(start);
+  if (freq === "daily")        x.setDate(x.getDate() + step * k);
+  else if (freq === "weekly")  x.setDate(x.getDate() + 7 * step * k);
+  else if (freq === "monthly") x.setMonth(x.getMonth() + step * k);
+  else if (freq === "yearly")  x.setFullYear(x.getFullYear() + step * k);
+  return x;
+}
+
+/** Diapazon boshiga yaqin takrorni topadi. Busiz 2020-yilda boshlangan
+ *  kundalik tadbir uchun 2026-yilga yetguncha limit tugab qolardi. */
+function firstIndexNear(start, freq, step, from, durDays) {
+  if (start >= from) return 0;
+  const days = (from - start) / 86400000;
+  let k = 0;
+  if (freq === "daily")        k = Math.floor(days / step);
+  else if (freq === "weekly")  k = Math.floor(days / (7 * step));
+  else if (freq === "monthly") k = Math.floor(
+    ((from.getFullYear() - start.getFullYear()) * 12 + from.getMonth() - start.getMonth()) / step);
+  else if (freq === "yearly")  k = Math.floor((from.getFullYear() - start.getFullYear()) / step);
+
+  // Ko'p kunlik tadbir diapazonga cho'zilib kirishi mumkin — biroz orqaga qaytamiz
+  const stepDays = freq === "daily" ? step : freq === "weekly" ? 7 * step : 28 * step;
+  const back = 2 + Math.ceil(durDays / Math.max(1, stepDays));
+  return Math.max(0, k - back);
+}
+
+const WIDE_FROM = new Date(2000, 0, 1);
+const WIDE_TO   = new Date(2100, 0, 1);
+
+/**
+ * Takrorlanuvchi tadbirlarni alohida sanalarga yoyadi.
+ * Qaytadigan har bir element oddiy tadbirga o'xshaydi, ustiga:
+ *   series_id — asl tadbir id si
+ *   occ_key   — shu takrorning sanasi (YYYY-MM-DD)
+ *   repeating — turkumga tegishlimi
+ */
+export function expandEvents(events, from = WIDE_FROM, to = WIDE_TO, limit = 600) {
+  const out = [];
+
+  for (const e of events) {
+    const start = new Date(e.start_at);
+    if (isNaN(start)) continue;
+    const dur = e.end_at ? Math.max(0, new Date(e.end_at) - start) : 0;
+    const rule = e.rrule;
+
+    const push = d => {
+      const key = dateKey(d);
+      if (e.exdates?.includes(key)) return;
+      out.push({
+        ...e,
+        start_at: d.toISOString(),
+        end_at: e.end_at ? new Date(d.getTime() + dur).toISOString() : null,
+        series_id: e.id,
+        occ_key: key,
+        repeating: Boolean(rule?.freq),
+      });
+    };
+
+    if (!rule?.freq || !FREQS.includes(rule.freq)) {
+      if (new Date(start.getTime() + dur) >= from && start <= to) push(start);
+      continue;
+    }
+
+    const step = Math.max(1, Number(rule.interval) || 1);
+    const until = rule.until ? new Date(rule.until) : null;
+    let k = firstIndexNear(start, rule.freq, step, from, dur / 86400000);
+    let made = 0;
+
+    while (made < limit) {
+      const cur = occurrenceAt(start, rule.freq, step, k++);
+      if (until && cur > until) break;
+      if (cur > to) break;
+      if (new Date(cur.getTime() + dur) >= from) { push(cur); made++; }
+      // juda uzoqqa ketib qolmaslik uchun
+      if (k > 100000) break;
+    }
+  }
+
+  return out.sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+}
+
+export function describeRule(rule) {
+  if (!rule?.freq) return "";
+  const step = Math.max(1, Number(rule.interval) || 1);
+  const base = t("rec." + rule.freq);
+  return step > 1 ? `${base} · ${t("rec.every", { n: step })}` : base;
+}
+
+/* ============================================================
+   Ko'p kunlik tadbirlar
+   ============================================================ */
+
+/** Tadbir qamrab olgan barcha sanalar */
+export function occDays(occ, cap = 90) {
+  const s = startOfDay(new Date(occ.start_at));
+  const e = startOfDay(new Date(occ.end_at ?? occ.start_at));
+  const out = [];
+  const d = new Date(s);
+  while (d <= e && out.length < cap) {
+    out.push(dateKey(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return out.length ? out : [dateKey(s)];
+}
+
+export const occSpan = occ => occDays(occ).length;
+
+/* ============================================================
+   Qidiruv va filtr
+   ============================================================ */
+
+export function matchesFilters(e) {
+  if (store.hidden.has(e.category ?? "other")) return false;
+  const q = store.query.trim().toLowerCase();
+  if (!q) return true;
+  return [e.title, e.description, e.location]
+    .some(v => (v ?? "").toLowerCase().includes(q));
+}
+
+/** Ko'rinishlar shu ro'yxatdan foydalanadi */
+export function visibleOccurrences(from, to) {
+  return expandEvents(store.events.filter(matchesFilters), from, to);
+}
+
+export function toggleCategory(id) {
+  store.hidden.has(id) ? store.hidden.delete(id) : store.hidden.add(id);
+  localStorage.setItem("hiddenCats", JSON.stringify([...store.hidden]));
+  emit();
+}
+
+export function setQuery(q) {
+  store.query = q;
+  emit();
+}
+
+/* ============================================================
+   Bitta sanani turkumdan chiqarish
+   ============================================================ */
+
+export async function skipOccurrence(seriesId, key) {
+  const fresh = await readAll();
+  const existing = fresh.events.find(e => e.id === seriesId);
+  if (!existing) return;
+
+  const updated = {
+    ...existing,
+    exdates: [...new Set([...(existing.exdates ?? []), key])],
+    updated_at: new Date().toISOString(),
+  };
+  const events = fresh.events.map(e => (e.id === seriesId ? updated : e));
+  const audit = [...fresh.audit, buildAuditEntry({
+    event: updated, action: "UPDATE", before: existing, after: updated,
+  })];
+
+  await writeAll({ events, audit });
+  store.events = events;
+  store.audit = audit;
+  emit();
+}
+
+/* ============================================================
+   O'chirilgan tadbirni tiklash
+   ============================================================ */
+
+export async function restoreEvent(auditId) {
+  const fresh = await readAll();
+  const entry = fresh.audit.find(a => a.id === auditId);
+  if (!entry?.snapshot) throw new Error(t("err.saveFailed", { code: "no snapshot" }));
+  if (fresh.events.some(e => e.id === entry.snapshot.id)) return entry.snapshot;
+
+  const event = { ...entry.snapshot, updated_at: new Date().toISOString() };
+  const events = [...fresh.events, event];
+  const audit = [...fresh.audit, buildAuditEntry({
+    event, action: "CREATE", before: null, after: event,
+  })];
+
+  await writeAll({ events, audit });
+  store.events = events;
+  store.audit = audit;
+  emit();
+  return event;
 }

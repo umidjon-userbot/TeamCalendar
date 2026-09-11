@@ -1,10 +1,12 @@
-import { CONFIG } from "../config.js";
-import { t, daysShort, formatMonthYear, formatDayMonth } from "./i18n.js";
+import { CONFIG } from "./config.js";
+import { t, daysShort, formatDayMonth } from "./i18n.js";
 import {
-  store, el, esc, uid, weekIndex, startOfDay, sameDay, dateKey,
+  store, el, esc, weekIndex, startOfDay, sameDay, dateKey,
   fmtTime, fmtDate, fmtDateTime, fmtDayMonth, relTime,
   toLocalInput, fromLocalInput, canEdit, saveEvent, deleteEvent,
-  verifyToken, setSession, downloadICS, toast, fieldLabel, emit,
+  verifyToken, downloadICS, toast, fieldLabel,
+  categoryOf, categoryLabel, eventColor, describeRule, FREQS,
+  occDays, occSpan, visibleOccurrences, skipOccurrence, restoreEvent,
 } from "./core.js";
 
 /* ============================================================
@@ -57,9 +59,7 @@ export function modal({ title, body, footer, wide = false, onMount }) {
   document.body.append(backdrop);
   openModals++;
   document.body.classList.add("no-scroll");
-
-  const focusable = backdrop.querySelector("input, textarea, button:not([data-close])");
-  focusable?.focus();
+  backdrop.querySelector("input, textarea, select, button:not([data-close])")?.focus();
 
   onMount?.(backdrop, close);
   return { root: backdrop, close };
@@ -124,99 +124,170 @@ export function openAuthModal(after) {
 }
 
 /* ============================================================
-   Tadbir modali (ko'rish / tahrirlash)
+   Yordamchilar
    ============================================================ */
 
-export function openEventDetail(event) {
+const seriesOf = occ => store.events.find(e => e.id === (occ.series_id ?? occ.id)) ?? occ;
+
+const requireAuth = fn => (canEdit() ? fn() : openAuthModal(fn));
+
+function catBadge(e) {
+  const c = categoryOf(e);
+  if (!c) return "";
+  return `<span class="badge" style="--c:${esc(c.color)}">${esc(categoryLabel(c))}</span>`;
+}
+
+/* ============================================================
+   Tadbir tafsiloti
+   ============================================================ */
+
+export function openEventDetail(occ) {
+  const span = occSpan(occ);
+  const color = eventColor(occ);
+
   const body = document.createElement("div");
   body.className = "detail";
   body.innerHTML = `
-    <div class="detail__when" style="--dot:${esc(event.color)}">
-      <strong>${esc(fmtDate(event.start_at))}</strong>
-      <span>${esc(fmtTime(event.start_at))}${event.end_at ? " – " + esc(fmtTime(event.end_at)) : ""}</span>
+    <div class="detail__tags">
+      ${catBadge(occ)}
+      ${occ.repeating ? `<span class="badge badge--plain">↻ ${esc(describeRule(occ.rrule))}</span>` : ""}
+      ${span > 1 ? `<span class="badge badge--plain">${esc(t("multi.span", { n: span }))}</span>` : ""}
     </div>
-    ${event.location ? `<p class="detail__row"><span class="detail__key">${esc(t("field.location"))}</span>${esc(event.location)}</p>` : ""}
-    ${event.description ? `<p class="detail__desc">${esc(event.description)}</p>` : ""}
-    <p class="detail__meta">${esc(t("event.by", { name: event.created_by ?? "—" }))} · ${esc(relTime(event.updated_at ?? event.created_at))}</p>`;
+    <div class="detail__when" style="--dot:${esc(color)}">
+      <strong>${esc(fmtDate(occ.start_at))}${span > 1 ? " – " + esc(fmtDate(occ.end_at)) : ""}</strong>
+      <span>${esc(fmtTime(occ.start_at))}${occ.end_at ? " – " + esc(fmtTime(occ.end_at)) : ""}</span>
+    </div>
+    ${occ.location ? `<p class="detail__row"><span class="detail__key">${esc(t("field.location"))}</span>${esc(occ.location)}</p>` : ""}
+    ${occ.description ? `<p class="detail__desc">${esc(occ.description)}</p>` : ""}
+    <p class="detail__meta">${esc(t("event.by", { name: occ.created_by ?? "—" }))} · ${esc(relTime(occ.updated_at ?? occ.created_at))}</p>`;
 
   const footer = document.createElement("div");
   footer.className = "modal__actions";
   footer.innerHTML = `
     <button class="btn" data-ics>${esc(t("event.exportOne"))}</button>
     <span class="spacer"></span>
-    ${canEdit()
-      ? `<button class="btn btn--danger-ghost" data-del>${esc(t("common.delete"))}</button>
-         <button class="btn btn--primary" data-edit>${esc(t("event.edit"))}</button>`
-      : `<button class="btn btn--primary" data-signin>${esc(t("nav.signIn"))}</button>`}`;
+    <button class="btn btn--danger-ghost" data-del>${esc(t("common.delete"))}</button>
+    <button class="btn btn--primary" data-edit>${esc(t("event.edit"))}</button>`;
 
-  const m = modal({ title: event.title, body, footer });
+  const m = modal({ title: occ.title, body, footer });
 
-  el("[data-ics]", footer).onclick = () => {
-    downloadICS([event], `${event.title.replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 40)}.ics`);
-  };
-  el("[data-signin]", footer)?.addEventListener("click", () => {
+  el("[data-ics]", footer).onclick = () =>
+    downloadICS([occ], `${occ.title.replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 40) || "tadbir"}.ics`);
+
+  el("[data-edit]", footer).onclick = () => requireAuth(() => {
     m.close();
-    openAuthModal(() => openEventDetail(event));
+    openEventForm(seriesOf(occ));
   });
-  el("[data-edit]", footer)?.addEventListener("click", () => {
-    m.close();
-    openEventForm(event);
-  });
-  el("[data-del]", footer)?.addEventListener("click", async () => {
-    if (!confirm(t("event.deleteConfirm", { title: event.title }))) return;
-    try {
-      await deleteEvent(event.id);
-      m.close();
-      toast(t("event.deleted"), "ok");
-    } catch (err) { toast(err.message, "err"); }
-  });
+
+  el("[data-del]", footer).onclick = () => requireAuth(() => askDelete(occ, m));
 }
+
+function askDelete(occ, parent) {
+  const finish = async (fn, msg) => {
+    try { await fn(); parent.close(); toast(msg, "ok"); }
+    catch (err) { toast(err.message, "err"); }
+  };
+
+  if (!occ.repeating) {
+    if (!confirm(t("event.deleteConfirm", { title: occ.title }))) return;
+    return finish(() => deleteEvent(occ.series_id ?? occ.id), t("event.deleted"));
+  }
+
+  const body = document.createElement("div");
+  body.className = "choice";
+  body.innerHTML = `
+    <button class="choice__opt" data-one>
+      <strong>${esc(t("rec.deleteOne"))}</strong>
+      <span>${esc(fmtDate(occ.start_at))}</span>
+    </button>
+    <button class="choice__opt choice__opt--danger" data-all>
+      <strong>${esc(t("rec.deleteAll"))}</strong>
+      <span>${esc(describeRule(occ.rrule))}</span>
+    </button>`;
+
+  const c = modal({ title: t("rec.deleteTitle"), body });
+
+  el("[data-one]", body).onclick = () => {
+    c.close();
+    finish(() => skipOccurrence(occ.series_id, occ.occ_key), t("rec.skipped"));
+  };
+  el("[data-all]", body).onclick = () => {
+    c.close();
+    finish(() => deleteEvent(occ.series_id ?? occ.id), t("event.deleted"));
+  };
+}
+
+/* ============================================================
+   Tadbir formasi
+   ============================================================ */
 
 export function openEventForm(event, presetDate) {
   const isNew = !event;
   const start = event?.start_at ?? (presetDate
     ? new Date(presetDate.getFullYear(), presetDate.getMonth(), presetDate.getDate(), 10, 0).toISOString()
     : new Date(Date.now() + 3600000).toISOString());
+  const rule = event?.rrule ?? null;
 
   const form = document.createElement("form");
   form.className = "form";
   form.innerHTML = `
     <label class="field">
       <span class="field__label">${esc(t("event.fTitle"))}</span>
-      <input name="title" class="input" required maxlength="120"
-             value="${esc(event?.title ?? "")}">
+      <input name="title" class="input" required maxlength="120" value="${esc(event?.title ?? "")}">
     </label>
+
+    <fieldset class="field">
+      <legend class="field__label">${esc(t("event.fCategory"))}</legend>
+      <div class="cats">
+        ${CONFIG.CATEGORIES.map(c => `
+          <label class="cat" style="--c:${esc(c.color)}">
+            <input type="radio" name="category" value="${esc(c.id)}"
+              ${(event?.category ?? CONFIG.CATEGORIES[0].id) === c.id ? "checked" : ""}>
+            <span>${esc(categoryLabel(c))}</span>
+          </label>`).join("")}
+      </div>
+    </fieldset>
+
     <div class="field-row">
       <label class="field">
         <span class="field__label">${esc(t("event.fStart"))}</span>
-        <input name="start_at" class="input" type="datetime-local" required
-               value="${esc(toLocalInput(start))}">
+        <input name="start_at" class="input" type="datetime-local" required value="${esc(toLocalInput(start))}">
       </label>
       <label class="field">
         <span class="field__label">${esc(t("event.fEnd"))} <em>${esc(t("common.optional"))}</em></span>
-        <input name="end_at" class="input" type="datetime-local"
-               value="${esc(toLocalInput(event?.end_at))}">
+        <input name="end_at" class="input" type="datetime-local" value="${esc(toLocalInput(event?.end_at))}">
       </label>
     </div>
+
+    <div class="field-row">
+      <label class="field">
+        <span class="field__label">${esc(t("event.fRepeat"))}</span>
+        <select name="freq" class="input">
+          <option value="">${esc(t("rec.none"))}</option>
+          ${FREQS.map(f => `<option value="${f}" ${rule?.freq === f ? "selected" : ""}>${esc(t("rec." + f))}</option>`).join("")}
+        </select>
+      </label>
+      <label class="field" data-rec hidden>
+        <span class="field__label">${esc(t("rec.interval"))}</span>
+        <input name="interval" class="input" type="number" min="1" max="52" value="${esc(rule?.interval ?? 1)}">
+      </label>
+      <label class="field" data-rec hidden>
+        <span class="field__label">${esc(t("rec.until"))} <em>${esc(t("rec.untilNone"))}</em></span>
+        <input name="until" class="input" type="date" value="${esc(rule?.until ? rule.until.slice(0, 10) : "")}">
+      </label>
+    </div>
+
     <label class="field">
       <span class="field__label">${esc(t("event.fLocation"))} <em>${esc(t("common.optional"))}</em></span>
       <input name="location" class="input" maxlength="120" value="${esc(event?.location ?? "")}">
     </label>
+
     <label class="field">
       <span class="field__label">${esc(t("event.fDesc"))} <em>${esc(t("common.optional"))}</em></span>
       <textarea name="description" class="input" rows="3" maxlength="600">${esc(event?.description ?? "")}</textarea>
     </label>
-    <fieldset class="field">
-      <legend class="field__label">${esc(t("event.fColor"))}</legend>
-      <div class="swatches">
-        ${CONFIG.COLORS.map((c, i) => `
-          <label class="swatch" style="--c:${esc(c.value)}">
-            <input type="radio" name="color" value="${esc(c.value)}"
-              ${(event?.color ?? CONFIG.COLORS[0].value) === c.value ? "checked" : ""}>
-            <span aria-label="${esc(c.name)}"></span>
-          </label>`).join("")}
-      </div>
-    </fieldset>
+
+    ${rule ? `<p class="notice notice--info">${esc(t("rec.seriesNote"))}</p>` : ""}
     <p class="form__error" data-error hidden></p>`;
 
   const footer = document.createElement("div");
@@ -228,19 +299,37 @@ export function openEventForm(event, presetDate) {
 
   const m = modal({ title: isNew ? t("event.new") : t("event.edit"), body: form, footer });
 
+  const recFields = [...form.querySelectorAll("[data-rec]")];
+  const syncRec = () => {
+    const on = Boolean(form.elements.freq.value);
+    recFields.forEach(f => { f.hidden = !on; });
+  };
+  form.elements.freq.onchange = syncRec;
+  syncRec();
+
   el("[data-save]", footer).onclick = async () => {
     const errBox = el("[data-error]", form);
     const btn = el("[data-save]", footer);
     errBox.hidden = true;
+
+    const freq = form.elements.freq.value;
+    const untilRaw = form.elements.until.value;
 
     const draft = {
       id: event?.id,
       title: form.elements.title.value.trim(),
       description: form.elements.description.value,
       location: form.elements.location.value,
+      category: form.elements.category.value,
       start_at: fromLocalInput(form.elements.start_at.value),
       end_at: fromLocalInput(form.elements.end_at.value),
-      color: form.elements.color.value,
+      rrule: freq
+        ? {
+            freq,
+            interval: Math.max(1, Number(form.elements.interval.value) || 1),
+            until: untilRaw ? new Date(untilRaw + "T23:59:59").toISOString() : null,
+          }
+        : null,
     };
 
     const fail = msg => { errBox.textContent = msg; errBox.hidden = false; };
@@ -248,6 +337,8 @@ export function openEventForm(event, presetDate) {
     if (!draft.start_at) return fail(t("event.errStart"));
     if (draft.end_at && new Date(draft.end_at) <= new Date(draft.start_at))
       return fail(t("event.errOrder"));
+    if (draft.rrule?.until && new Date(draft.rrule.until) <= new Date(draft.start_at))
+      return fail(t("rec.errUntil"));
 
     btn.disabled = true;
     btn.textContent = t("common.loading");
@@ -268,16 +359,32 @@ export function openEventForm(event, presetDate) {
    Taqvim ko'rinishi
    ============================================================ */
 
-function eventsByDay(events) {
+/** Har bir sanaga o'sha kuni davom etayotgan tadbirlarni biriktiradi */
+function occurrencesByDay(occs) {
   const map = new Map();
-  for (const e of events) {
-    const k = dateKey(new Date(e.start_at));
-    if (!map.has(k)) map.set(k, []);
-    map.get(k).push(e);
+  for (const occ of occs) {
+    const days = occDays(occ);
+    days.forEach((key, i) => {
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push({ occ, part: i === 0 ? "start" : "cont", index: i + 1, total: days.length });
+    });
   }
   for (const list of map.values())
-    list.sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+    list.sort((a, b) =>
+      (b.total - a.total) || (new Date(a.occ.start_at) - new Date(b.occ.start_at)));
   return map;
+}
+
+function chipHTML({ occ, part, index, total }) {
+  const cont = part === "cont";
+  return `
+    <button class="chip${cont ? " chip--cont" : ""}" style="--c:${esc(eventColor(occ))}"
+            data-occ="${esc(occ.series_id)}|${esc(occ.occ_key)}"
+            title="${esc(occ.title)}${total > 1 ? " · " + esc(t("multi.dayOf", { i: index, n: total })) : ""}">
+      <span class="chip__time">${cont ? "›" : esc(fmtTime(occ.start_at))}</span>
+      <span class="chip__title">${esc(occ.title)}</span>
+      ${occ.repeating && !cont ? `<span class="chip__rep" aria-hidden="true">↻</span>` : ""}
+    </button>`;
 }
 
 export function renderCalendar(host) {
@@ -285,35 +392,32 @@ export function renderCalendar(host) {
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = new Date(first);
   gridStart.setDate(1 - weekIndex(first));
+  const gridEnd = new Date(gridStart);
+  gridEnd.setDate(gridStart.getDate() + 41);
 
-  const byDay = eventsByDay(store.events);
+  const occs = visibleOccurrences(gridStart, gridEnd);
+  const byDay = occurrencesByDay(occs);
   const today = startOfDay(new Date());
   const cells = [];
 
   for (let i = 0; i < 42; i++) {
     const d = new Date(gridStart);
     d.setDate(gridStart.getDate() + i);
+    const key = dateKey(d);
     const inMonth = d.getMonth() === cursor.getMonth();
     const isToday = sameDay(d, today);
     const weekend = weekIndex(d) >= 5;
-    const list = byDay.get(dateKey(d)) ?? [];
+    const list = byDay.get(key) ?? [];
     const shown = list.slice(0, 3);
     const rest = list.length - shown.length;
 
     cells.push(`
-      <div class="cell${inMonth ? "" : " cell--out"}${weekend ? " cell--weekend" : ""}${isToday ? " cell--today" : ""}"
-           data-date="${dateKey(d)}">
-        <button class="cell__hit" data-add="${dateKey(d)}"
-                aria-label="${esc(formatDayMonth(d))}"></button>
+      <div class="cell${inMonth ? "" : " cell--out"}${weekend ? " cell--weekend" : ""}${isToday ? " cell--today" : ""}">
+        <button class="cell__hit" data-add="${key}" aria-label="${esc(formatDayMonth(d))}"></button>
         <span class="cell__num">${d.getDate()}</span>
         <div class="cell__events">
-          ${shown.map(e => `
-            <button class="chip" data-event="${esc(e.id)}" style="--c:${esc(e.color)}"
-                    title="${esc(e.title)}">
-              <span class="chip__time">${esc(fmtTime(e.start_at))}</span>
-              <span class="chip__title">${esc(e.title)}</span>
-            </button>`).join("")}
-          ${rest > 0 ? `<button class="chip chip--more" data-more="${dateKey(d)}">${esc(t("calendar.more", { n: rest }))}</button>` : ""}
+          ${shown.map(chipHTML).join("")}
+          ${rest > 0 ? `<button class="chip chip--more" data-more="${key}">${esc(t("calendar.more", { n: rest }))}</button>` : ""}
         </div>
       </div>`);
   }
@@ -327,47 +431,44 @@ export function renderCalendar(host) {
       <div class="grid__body">${cells.join("")}</div>
     </div>`;
 
-  host.querySelectorAll("[data-event]").forEach(btn => {
+  host.querySelectorAll("[data-occ]").forEach(btn => {
     btn.onclick = () => {
-      const ev = store.events.find(x => x.id === btn.dataset.event);
-      if (ev) openEventDetail(ev);
+      const [sid, key] = btn.dataset.occ.split("|");
+      const occ = occs.find(o => o.series_id === sid && o.occ_key === key);
+      if (occ) openEventDetail(occ);
     };
   });
 
   host.querySelectorAll("[data-more]").forEach(btn => {
-    btn.onclick = () => openDay(new Date(btn.dataset.more + "T00:00:00"));
+    btn.onclick = () => openDay(new Date(btn.dataset.more + "T00:00:00"), byDay.get(btn.dataset.more) ?? []);
   });
 
   host.querySelectorAll("[data-add]").forEach(btn => {
     btn.onclick = () => {
       const d = new Date(btn.dataset.add + "T00:00:00");
-      if (canEdit()) openEventForm(null, d);
-      else openAuthModal(() => openEventForm(null, d));
+      requireAuth(() => openEventForm(null, d));
     };
   });
 }
 
-function openDay(date) {
-  const list = store.events
-    .filter(e => sameDay(new Date(e.start_at), date))
-    .sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
-
+function openDay(date, entries) {
   const body = document.createElement("div");
   body.className = "daylist";
-  body.innerHTML = list.map(e => `
-    <button class="dayrow" data-event="${esc(e.id)}" style="--c:${esc(e.color)}">
-      <span class="dayrow__time">${esc(fmtTime(e.start_at))}</span>
+  body.innerHTML = entries.map(({ occ, part }) => `
+    <button class="dayrow" data-key="${esc(occ.series_id)}|${esc(occ.occ_key)}" style="--c:${esc(eventColor(occ))}">
+      <span class="dayrow__time">${part === "cont" ? "›" : esc(fmtTime(occ.start_at))}</span>
       <span class="dayrow__body">
-        <span class="dayrow__title">${esc(e.title)}</span>
-        ${e.location ? `<span class="dayrow__place">${esc(e.location)}</span>` : ""}
+        <span class="dayrow__title">${esc(occ.title)}</span>
+        ${occ.location ? `<span class="dayrow__place">${esc(occ.location)}</span>` : ""}
       </span>
     </button>`).join("");
 
   const m = modal({ title: formatDayMonth(date), body });
-  body.querySelectorAll("[data-event]").forEach(btn => {
+  body.querySelectorAll("[data-key]").forEach(btn => {
     btn.onclick = () => {
+      const entry = entries.find(e => `${e.occ.series_id}|${e.occ.occ_key}` === btn.dataset.key);
       m.close();
-      openEventDetail(store.events.find(x => x.id === btn.dataset.event));
+      if (entry) openEventDetail(entry.occ);
     };
   });
 }
@@ -378,45 +479,71 @@ function openDay(date) {
 
 export function renderList(host) {
   const now = Date.now();
-  const sorted = [...store.events].sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
-  const upcoming = sorted.filter(e => new Date(e.end_at ?? e.start_at).getTime() >= now);
-  const past = sorted.filter(e => new Date(e.end_at ?? e.start_at).getTime() < now).reverse();
+  const horizon = new Date(now + 1000 * 60 * 60 * 24 * 400);
+  const occs = visibleOccurrences(new Date(2000, 0, 1), horizon);
 
-  if (!sorted.length) {
+  if (!occs.length) {
+    const q = store.query.trim();
     host.innerHTML = `
       <div class="empty">
-        <p class="empty__title">${esc(t("list.empty"))}</p>
-        <p class="empty__hint">${esc(t("list.emptyHint"))}</p>
+        <p class="empty__title">${esc(q ? t("search.none", { q }) : t("list.empty"))}</p>
+        ${q ? "" : `<p class="empty__hint">${esc(t("list.emptyHint"))}</p>`}
       </div>`;
     return;
   }
 
+  const upcoming = occs.filter(e => new Date(e.end_at ?? e.start_at).getTime() >= now);
+  const past = occs.filter(e => new Date(e.end_at ?? e.start_at).getTime() < now).reverse();
+
+  const rowHTML = occ => {
+    const span = occSpan(occ);
+    return `
+      <button class="row" data-key="${esc(occ.series_id)}|${esc(occ.occ_key)}" style="--c:${esc(eventColor(occ))}">
+        <span class="row__date">
+          <span class="row__day">${esc(fmtDayMonth(occ.start_at))}</span>
+          <span class="row__time">${esc(fmtTime(occ.start_at))}</span>
+        </span>
+        <span class="row__main">
+          <span class="row__title">${esc(occ.title)}</span>
+          <span class="row__sub">
+            ${catBadge(occ)}
+            ${span > 1 ? `<span class="badge badge--plain">${esc(t("multi.span", { n: span }))}</span>` : ""}
+            ${occ.repeating ? `<span class="badge badge--plain">↻</span>` : ""}
+            ${occ.location ? `<span class="row__place">${esc(occ.location)}</span>` : ""}
+          </span>
+        </span>
+      </button>`;
+  };
+
   const section = (label, items, dim) => items.length ? `
     <section class="agenda${dim ? " agenda--past" : ""}">
       <h2 class="agenda__label">${esc(label)}</h2>
-      ${items.map(e => `
-        <button class="row" data-event="${esc(e.id)}" style="--c:${esc(e.color)}">
-          <span class="row__date">
-            <span class="row__day">${esc(fmtDayMonth(e.start_at))}</span>
-            <span class="row__time">${esc(fmtTime(e.start_at))}</span>
-          </span>
-          <span class="row__main">
-            <span class="row__title">${esc(e.title)}</span>
-            ${e.location ? `<span class="row__place">${esc(e.location)}</span>` : ""}
-          </span>
-        </button>`).join("")}
+      ${items.map(rowHTML).join("")}
     </section>` : "";
 
-  host.innerHTML = section(t("list.upcoming"), upcoming, false) + section(t("list.past"), past, true);
+  host.innerHTML =
+    section(t("list.upcoming"), upcoming.slice(0, 200), false) +
+    section(t("list.past"), past.slice(0, 100), true);
 
-  host.querySelectorAll("[data-event]").forEach(btn => {
-    btn.onclick = () => openEventDetail(store.events.find(x => x.id === btn.dataset.event));
+  host.querySelectorAll("[data-key]").forEach(btn => {
+    btn.onclick = () => {
+      const occ = occs.find(o => `${o.series_id}|${o.occ_key}` === btn.dataset.key);
+      if (occ) openEventDetail(occ);
+    };
   });
 }
 
 /* ============================================================
    O'zgarishlar tarixi
    ============================================================ */
+
+function shortVal(key, v) {
+  if (v === null || v === undefined || v === "") return t("audit.empty_value");
+  if (key === "start_at" || key === "end_at") return fmtDateTime(v);
+  if (key === "category") return categoryLabel(CONFIG.CATEGORIES.find(c => c.id === v)) || String(v);
+  if (key === "rrule") return typeof v === "object" ? describeRule(v) : String(v);
+  return String(v).length > 40 ? String(v).slice(0, 40) + "…" : String(v);
+}
 
 export function auditItemHTML(entry) {
   const changes = Object.keys(entry.diff?.after ?? {});
@@ -428,30 +555,52 @@ export function auditItemHTML(entry) {
           <b>${esc(shortVal(k, entry.diff.after[k]))}</b></li>`).join("")}</ul>`
     : "";
 
+  const canRestore = entry.action === "DELETE" && entry.snapshot
+    && !store.events.some(e => e.id === entry.snapshot.id);
+
   return `
     <li class="log">
       <div class="log__line">
         <span class="log__who">${esc(entry.changed_by)}</span>
         <span class="log__verb log__verb--${entry.action.toLowerCase()}">${esc(t("audit." + entry.action))}</span>
         <span class="log__what">${esc(entry.event_title ?? "—")}</span>
+        ${canRestore ? `<button class="btn btn--small log__restore" data-restore="${esc(entry.id)}">${esc(t("restore.btn"))}</button>` : ""}
       </div>
       ${detail}
       <time class="log__time" datetime="${esc(entry.changed_at)}">${esc(relTime(entry.changed_at))}</time>
     </li>`;
 }
 
-function shortVal(key, v) {
-  if (v === null || v === undefined || v === "") return t("audit.empty_value");
-  if (key === "start_at" || key === "end_at") return fmtDateTime(v);
-  return String(v).length > 40 ? String(v).slice(0, 40) + "…" : String(v);
+export function wireRestore(root, redraw) {
+  root.querySelectorAll("[data-restore]").forEach(btn => {
+    btn.onclick = () => requireAuth(async () => {
+      const entry = store.audit.find(a => a.id === btn.dataset.restore);
+      if (!entry || !confirm(t("restore.confirm", { title: entry.snapshot?.title ?? "" }))) return;
+      btn.disabled = true;
+      try {
+        await restoreEvent(entry.id);
+        toast(t("restore.done"), "ok");
+        redraw?.();
+      } catch (err) {
+        toast(err.message, "err");
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 export function openAuditDrawer() {
-  const entries = [...store.audit].reverse();
   const body = document.createElement("div");
   body.className = "logwrap";
-  body.innerHTML = entries.length
-    ? `<ul class="logs">${entries.map(auditItemHTML).join("")}</ul>`
-    : `<div class="empty"><p class="empty__title">${esc(t("audit.empty"))}</p></div>`;
+
+  const draw = () => {
+    const entries = [...store.audit].reverse();
+    body.innerHTML = entries.length
+      ? `<ul class="logs">${entries.map(auditItemHTML).join("")}</ul>`
+      : `<div class="empty"><p class="empty__title">${esc(t("audit.empty"))}</p></div>`;
+    wireRestore(body, draw);
+  };
+
+  draw();
   modal({ title: t("audit.title"), body, wide: true });
 }

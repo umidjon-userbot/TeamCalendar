@@ -609,23 +609,35 @@ textarea.input { resize: vertical; min-height: 68px; }
 }
 .form__error--wide { flex-basis: 100%; }
 
-/* Ranglar */
+/* Turlar */
 
-.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
-.swatch { position: relative; }
-.swatch input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
-.swatch span {
-  display: block;
-  width: 28px;
-  height: 28px;
+.cats { display: flex; gap: 7px; flex-wrap: wrap; }
+.cat { position: relative; }
+.cat input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.cat span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.cat span::before {
+  content: "";
+  width: 9px; height: 9px;
   border-radius: 100px;
   background: var(--c);
-  cursor: pointer;
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 2px transparent;
-  transition: box-shadow .12s;
+  flex: none;
 }
-.swatch input:checked + span { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--c); }
-.swatch input:focus-visible + span { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink); }
+.cat input:checked + span {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 10%, var(--surface));
+  font-weight: 500;
+}
+.cat input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* ============================================================
    Tadbir tafsiloti
@@ -817,4 +829,244 @@ textarea.input { resize: vertical; min-height: 68px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+
+/* ============================================================
+   Qidiruv
+   ============================================================ */
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--ink-3);
+  transition: border-color .12s, box-shadow .12s;
+}
+.search:focus-within { border-color: var(--ink); box-shadow: 0 0 0 3px rgb(22 48 43 / .09); }
+.search svg { flex: none; }
+
+.search__input {
+  width: 160px;
+  padding: 7px 0;
+  background: none;
+  border: 0;
+  outline: 0;
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+.search__input::-webkit-search-cancel-button { cursor: pointer; }
+
+/* ============================================================
+   Filtr tugmalari
+   ============================================================ */
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 12px var(--pad) 0;
+  max-width: 1380px;
+  margin: 0 auto;
+}
+
+.filters__label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-3);
+  margin-right: 2px;
+}
+
+.fchip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity .12s, border-color .12s;
+}
+.fchip::before {
+  content: "";
+  width: 8px; height: 8px;
+  border-radius: 100px;
+  background: var(--c);
+  flex: none;
+}
+.fchip:hover { border-color: var(--ink-3); }
+.fchip--off { opacity: .4; text-decoration: line-through; }
+.fchip--off::before { background: var(--ink-3); }
+
+/* ============================================================
+   Nishonlar
+   ============================================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 100px;
+  font-size: 0.73rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--c) 14%, var(--surface));
+  color: color-mix(in srgb, var(--c) 72%, var(--ink));
+  white-space: nowrap;
+}
+.badge--plain {
+  background: var(--shade);
+  color: var(--ink-3);
+}
+
+.detail__tags { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.row__sub {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
+/* Takrorlanish belgisi katakda */
+.chip__rep { flex: none; color: var(--c); opacity: .65; font-size: 0.7rem; }
+
+/* Ko'p kunlik tadbirning davomi */
+.chip--cont { opacity: .82; }
+.chip--cont .chip__time { font-size: 0.9rem; line-height: 1; }
+
+/* ============================================================
+   Tanlov modali (turkumni o'chirish)
+   ============================================================ */
+
+.choice { display: flex; flex-direction: column; gap: 9px; }
+
+.choice__opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s, background .12s;
+}
+.choice__opt:hover { border-color: var(--ink); background: var(--shade); }
+.choice__opt strong { font-weight: 600; }
+.choice__opt span { font-size: 0.84rem; color: var(--ink-3); }
+.choice__opt--danger:hover { border-color: var(--red); background: #FBEDEB; }
+.choice__opt--danger strong { color: var(--red); }
+
+.notice--info {
+  background: #E8F0F4;
+  color: #2A505F;
+  border: 1px solid #CBDEE6;
+}
+
+.log__restore { margin-left: auto; padding: 3px 10px; font-size: 0.78rem; }
+
+/* ============================================================
+   Sozlash ekrani
+   ============================================================ */
+
+.setup__body { color: var(--ink-2); margin-top: 12px; }
+
+.setup__steps {
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin: 20px 0;
+}
+.setup__steps li {
+  counter-increment: step;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 0.92rem;
+}
+.setup__steps li::before {
+  content: counter(step);
+  flex: none;
+  width: 22px; height: 22px;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.setup__hint { font-size: 0.85rem; color: var(--ink-3); }
+
+/* ============================================================
+   Chop etish
+   ============================================================ */
+
+@media print {
+  @page { margin: 12mm; size: landscape; }
+
+  body { background: #fff; }
+
+  .topbar__row--controls .topbar__tools,
+  .topbar__right,
+  .filters,
+  .readonly-note,
+  .cell__hit,
+  #toasts,
+  .backdrop { display: none !important; }
+
+  .topbar {
+    position: static;
+    border-bottom: 2px solid #000;
+    padding: 0 0 6px;
+    margin-bottom: 10px;
+  }
+  .topbar__row { min-height: 0; }
+  .topbar__row--controls { border-top: 0; padding: 4px 0 0; }
+  .monthnav .icon-btn, .monthnav .btn { display: none; }
+  .monthnav__title { margin: 0; font-size: 20pt; }
+
+  .page { padding: 0; max-width: none; }
+
+  .grid { border-color: #000; border-radius: 0; box-shadow: none; }
+  .grid__dow { background: #fff; color: #000; border-color: #000; }
+  .cell {
+    min-height: 0;
+    height: 3.1cm;
+    border-color: #999;
+    break-inside: avoid;
+  }
+  .cell--out { background: #fff; }
+  .cell--out .cell__num { opacity: .35; }
+  .cell--weekend { background: #f4f4f4; }
+  .cell--today .cell__num { background: #000; color: #fff; }
+
+  /* Chop etishda hamma tadbir ko'rinsin */
+  .cell__events { overflow: visible; }
+  .chip {
+    background: #fff !important;
+    border-left: 2.5px solid #000;
+    font-size: 7.5pt;
+    padding: 1px 3px;
+  }
+  .chip__time { color: #000; }
+  .chip__title { white-space: normal; overflow: visible; }
+  .chip__rep { display: none; }
+
+  .agenda { border-color: #000; box-shadow: none; break-inside: auto; }
+  .row { break-inside: avoid; }
+  .agenda--past { display: none; }
 }

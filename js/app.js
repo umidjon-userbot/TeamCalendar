@@ -1,13 +1,19 @@
-import { CONFIG } from "../config.js";
+import { CONFIG } from "./config.js";
 import { t, LANGS, getLang, setLang, onLangChange, formatMonthYear } from "./i18n.js";
 import {
   store, el, esc, subscribe, emit, refresh, canEdit, setSession,
-  downloadICS, toast, hasWriteAccess,
+  downloadICS, toast, hasWriteAccess, categoryLabel,
+  toggleCategory, setQuery, visibleOccurrences,
 } from "./core.js";
 import { renderCalendar, renderList, openAuthModal, openEventForm, openAuditDrawer } from "./views.js";
 import { renderAdmin } from "./admin.js";
 
 const app = el("#app");
+const configured = () => Boolean(CONFIG.GIST_ID);
+
+/* ============================================================
+   Bo'laklar
+   ============================================================ */
 
 function brandHTML() {
   return `
@@ -23,6 +29,40 @@ function brandHTML() {
     </a>`;
 }
 
+function langHTML() {
+  return `
+    <div class="langpick">
+      <button class="btn btn--ghost btn--small" data-lang-toggle
+              aria-haspopup="true" aria-expanded="false">
+        ${esc(LANGS.find(l => l.code === getLang())?.short ?? "EN")}
+      </button>
+      <ul class="langmenu" data-lang-menu hidden>
+        ${LANGS.map(l => `
+          <li><button data-lang="${l.code}"${l.code === getLang() ? ' aria-current="true"' : ""}>
+            ${esc(l.label)}</button></li>`).join("")}
+      </ul>
+    </div>`;
+}
+
+function wireLang(root) {
+  const toggle = el("[data-lang-toggle]", root);
+  const menu = el("[data-lang-menu]", root);
+  if (!toggle) return;
+  toggle.onclick = e => {
+    e.stopPropagation();
+    const open = menu.hidden;
+    menu.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+  };
+  menu.querySelectorAll("[data-lang]").forEach(btn => {
+    btn.onclick = () => { menu.hidden = true; setLang(btn.dataset.lang); };
+  });
+}
+
+document.addEventListener("click", () => {
+  document.querySelectorAll("[data-lang-menu]").forEach(m => { m.hidden = true; });
+});
+
 /* ============================================================
    Header
    ============================================================ */
@@ -33,26 +73,11 @@ function headerHTML() {
     <header class="topbar">
       <div class="topbar__row">
         ${brandHTML()}
-
         <div class="topbar__right">
-          <div class="langpick">
-            <button class="btn btn--ghost btn--small" data-lang-toggle
-                    aria-haspopup="true" aria-expanded="false">
-              ${esc(LANGS.find(l => l.code === getLang())?.short ?? "EN")}
-            </button>
-            <ul class="langmenu" data-lang-menu hidden>
-              ${LANGS.map(l => `
-                <li><button data-lang="${l.code}"${l.code === getLang() ? ' aria-current="true"' : ""}>
-                  ${esc(l.label)}</button></li>`).join("")}
-            </ul>
-          </div>
-
+          ${langHTML()}
           <button class="btn btn--ghost btn--small" data-history>${esc(t("nav.history"))}</button>
-
           ${signed
-            ? `<span class="whoami" title="${esc(t("auth.signedInAs", { name: store.session.username }))}">
-                 ${esc(store.session.username)}
-               </span>
+            ? `<span class="whoami">${esc(store.session.username)}</span>
                <button class="btn btn--ghost btn--small" data-signout>${esc(t("nav.signOut"))}</button>`
             : `<button class="btn btn--ghost btn--small" data-signin>${esc(t("nav.signIn"))}</button>`}
         </div>
@@ -75,12 +100,22 @@ function headerHTML() {
         </div>
 
         <div class="topbar__tools">
+          <div class="search">
+            <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+              <circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M13.2 13.2L17 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            <input class="search__input" data-search type="search"
+                   placeholder="${esc(t("search.placeholder"))}"
+                   value="${esc(store.query)}" aria-label="${esc(t("search.placeholder"))}">
+          </div>
           <div class="segmented segmented--view">
             <label><input type="radio" name="view" value="calendar"
                    ${store.view === "calendar" ? "checked" : ""}><span>${esc(t("nav.calendarView"))}</span></label>
             <label><input type="radio" name="view" value="list"
                    ${store.view === "list" ? "checked" : ""}><span>${esc(t("nav.listView"))}</span></label>
           </div>
+          <button class="btn btn--small" data-print>${esc(t("print.btn"))}</button>
           <button class="btn btn--small" data-export>${esc(t("nav.export"))}</button>
           <button class="btn btn--primary btn--small" data-add>${esc(t("nav.addEvent"))}</button>
         </div>
@@ -88,7 +123,25 @@ function headerHTML() {
     </header>`;
 }
 
-function wireHeader(root) {
+function filterBarHTML() {
+  return `
+    <div class="filters">
+      <span class="filters__label">${esc(t("filter.label"))}</span>
+      ${CONFIG.CATEGORIES.map(c => {
+        const off = store.hidden.has(c.id);
+        return `<button class="fchip${off ? " fchip--off" : ""}" style="--c:${esc(c.color)}"
+                        data-cat="${esc(c.id)}" aria-pressed="${!off}">
+                  ${esc(categoryLabel(c))}
+                </button>`;
+      }).join("")}
+    </div>`;
+}
+
+/* Qidiruv maydonidagi fokusni yangilanishdan keyin tiklaymiz */
+let searchFocused = false;
+let searchTimer = null;
+
+function wireControls(root) {
   const move = n => {
     store.cursor = new Date(store.cursor.getFullYear(), store.cursor.getMonth() + n, 1);
     emit();
@@ -106,10 +159,23 @@ function wireHeader(root) {
     };
   });
 
+  const search = el("[data-search]", root);
+  search.addEventListener("focus", () => { searchFocused = true; });
+  search.addEventListener("blur", () => { searchFocused = false; });
+  search.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => setQuery(search.value), 220);
+  });
+
+  el("[data-print]", root).onclick = () => window.print();
+
   el("[data-export]", root).onclick = () => {
-    if (!store.events.length) return toast(t("export.nothing"), "err");
-    downloadICS(store.events);
-    toast(t("export.done", { n: store.events.length }), "ok");
+    const from = new Date(Date.now() - 1000 * 60 * 60 * 24 * 365);
+    const to = new Date(Date.now() + 1000 * 60 * 60 * 24 * 730);
+    const occs = visibleOccurrences(from, to);
+    if (!occs.length) return toast(t("export.nothing"), "err");
+    downloadICS(occs);
+    toast(t("export.done", { n: occs.length }), "ok");
   };
 
   el("[data-add]", root).onclick = () => {
@@ -124,28 +190,45 @@ function wireHeader(root) {
     toast(t("auth.signedOut"));
   });
 
-  // Til menyusi
-  const toggle = el("[data-lang-toggle]", root);
-  const menu = el("[data-lang-menu]", root);
-  toggle.onclick = e => {
-    e.stopPropagation();
-    const open = menu.hidden;
-    menu.hidden = !open;
-    toggle.setAttribute("aria-expanded", String(open));
-  };
-  menu.querySelectorAll("[data-lang]").forEach(btn => {
-    btn.onclick = () => { menu.hidden = true; setLang(btn.dataset.lang); };
+  root.querySelectorAll("[data-cat]").forEach(btn => {
+    btn.onclick = () => toggleCategory(btn.dataset.cat);
   });
-  document.addEventListener("click", () => { menu.hidden = true; toggle.setAttribute("aria-expanded", "false"); });
+
+  wireLang(root);
 }
 
 /* ============================================================
    Sahifalar
    ============================================================ */
 
+function setupScreen() {
+  app.innerHTML = `
+    <header class="topbar"><div class="topbar__row">${brandHTML()}
+      <div class="topbar__right">${langHTML()}</div></div></header>
+    <main class="page">
+      <div class="panel panel--narrow">
+        <h1 class="panel__title">${esc(t("setup.title"))}</h1>
+        <p class="setup__body">${esc(t("setup.body"))}</p>
+        <ol class="setup__steps">
+          <li>${esc(t("setup.s1"))}</li>
+          <li>${esc(t("setup.s2"))}</li>
+          <li>${esc(t("setup.s3"))}</li>
+        </ol>
+        <p class="setup__hint">${esc(t("setup.hint"))}</p>
+      </div>
+    </main>`;
+  wireLang(app);
+}
+
 function renderCalendarPage() {
-  app.innerHTML = headerHTML() + `<main class="page" id="main"></main>`;
-  wireHeader(app);
+  app.innerHTML = headerHTML() + filterBarHTML() + `<main class="page" id="main"></main>`;
+  wireControls(app);
+
+  if (searchFocused) {
+    const s = el("[data-search]", app);
+    s.focus();
+    s.setSelectionRange(s.value.length, s.value.length);
+  }
 
   const main = el("#main", app);
 
@@ -170,27 +253,11 @@ function renderAdminPage() {
     <header class="topbar topbar--admin">
       <div class="topbar__row">
         ${brandHTML()}
-        <div class="topbar__right">
-          <div class="langpick">
-            <button class="btn btn--ghost btn--small" data-lang-toggle>
-              ${esc(LANGS.find(l => l.code === getLang())?.short ?? "EN")}</button>
-            <ul class="langmenu" data-lang-menu hidden>
-              ${LANGS.map(l => `<li><button data-lang="${l.code}">${esc(l.label)}</button></li>`).join("")}
-            </ul>
-          </div>
-        </div>
+        <div class="topbar__right">${langHTML()}</div>
       </div>
     </header>
     <main class="page" id="main"></main>`;
-
-  const toggle = el("[data-lang-toggle]", app);
-  const menu = el("[data-lang-menu]", app);
-  toggle.onclick = e => { e.stopPropagation(); menu.hidden = !menu.hidden; };
-  menu.querySelectorAll("[data-lang]").forEach(b => {
-    b.onclick = () => { menu.hidden = true; setLang(b.dataset.lang); };
-  });
-  document.addEventListener("click", () => { menu.hidden = true; });
-
+  wireLang(app);
   renderAdmin(el("#main", app));
 }
 
@@ -199,6 +266,7 @@ function renderAdminPage() {
    ============================================================ */
 
 function route() {
+  if (!configured()) return setupScreen();
   const hash = location.hash.replace(/^#/, "") || "/";
   if (hash.startsWith("/admin")) renderAdminPage();
   else renderCalendarPage();
@@ -208,7 +276,9 @@ function route() {
    Boshlash
    ============================================================ */
 
-subscribe(() => { if (!location.hash.startsWith("#/admin")) renderCalendarPage(); });
+subscribe(() => {
+  if (configured() && !location.hash.startsWith("#/admin")) renderCalendarPage();
+});
 onLangChange(() => route());
 window.addEventListener("hashchange", route);
 
@@ -216,21 +286,23 @@ document.documentElement.lang = getLang();
 document.title = CONFIG.SITE_TITLE;
 route();
 
-refresh().catch(err => {
-  toast(err.message, "err");
-  const main = el("#main", app);
-  if (main) {
-    main.innerHTML = `
-      <div class="empty">
-        <p class="empty__title">${esc(err.message)}</p>
-        <button class="btn" id="retry">${esc(t("common.retry"))}</button>
-      </div>`;
-    el("#retry", main).onclick = () => location.reload();
-  }
-});
+if (configured()) {
+  refresh().catch(err => {
+    toast(err.message, "err");
+    const main = el("#main", app);
+    if (main) {
+      main.innerHTML = `
+        <div class="empty">
+          <p class="empty__title">${esc(err.message)}</p>
+          <button class="btn" id="retry">${esc(t("common.retry"))}</button>
+        </div>`;
+      el("#retry", main).onclick = () => location.reload();
+    }
+  });
 
-// Boshqa qurilmadagi o'zgarishlarni har 60 soniyada olib keladi
-setInterval(() => {
-  if (document.hidden || document.querySelector(".backdrop")) return;
-  refresh().catch(() => {});
-}, 60000);
+  // Boshqa qurilmadagi o'zgarishlarni olib keladi
+  setInterval(() => {
+    if (document.hidden || document.querySelector(".backdrop") || searchFocused) return;
+    refresh().catch(() => {});
+  }, 60000);
+}
