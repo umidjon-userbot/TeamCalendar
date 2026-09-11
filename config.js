@@ -21,13 +21,17 @@ export const CONFIG = {
   ADMIN_PASSWORD_HASH: "1ac0be2aaa305138076a3f0d16539f0621913fb1a1ffa24737911bfaccb92d9f",
 
   // Tadbir ranglari (foydalanuvchi tanlaydi)
-  COLORS: [
-    { name: "Ko'k",     value: "#2F6F8F" },
-    { name: "Yashil",   value: "#4E7A4A" },
-    { name: "Qizil",    value: "#C0392B" },
-    { name: "Sariq",    value: "#B8862B" },
-    { name: "Siyoh",    value: "#4B4A6B" },
-    { name: "Zaytun",   value: "#79876E" },
+  CATEGORIES: [
+    { id: "lesson",  color: "#2F6F8F",
+      label: { uz: "Dars",    ru: "Занятие",      en: "Class",   zh: "课程" } },
+    { id: "event",   color: "#4E7A4A",
+      label: { uz: "Tadbir",  ru: "Мероприятие",  en: "Event",   zh: "活动" } },
+    { id: "exam",    color: "#C0392B",
+      label: { uz: "Imtihon", ru: "Экзамен",      en: "Exam",    zh: "考试" } },
+    { id: "holiday", color: "#B8862B",
+      label: { uz: "Bayram",  ru: "Праздник",     en: "Holiday", zh: "假期" } },
+    { id: "other",   color: "#79876E",
+      label: { uz: "Boshqa",  ru: "Другое",       en: "Other",   zh: "其他" } },
   ],
 };
 
